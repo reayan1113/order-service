@@ -53,6 +53,27 @@ docker run -p 8083:8083 \
   order-service
 ```
 
+### Load Synthetic Data
+
+For testing and development, you can load 2 months of synthetic order data:
+
+```bash
+# In MySQL Workbench:
+# 1. Open synthetic_data.sql
+# 2. Select 'orderdb' database
+# 3. Press Ctrl+Shift+Enter to execute
+
+# Or via command line:
+mysql -u root -p orderdb < synthetic_data.sql
+```
+
+**Synthetic Data Includes:**
+- 324 orders (Dec 16, 2025 - Feb 15, 2026)
+- 304 completed (SERVED) orders
+- 20 active orders (CREATED, CONFIRMED, PREPARING, READY)
+- ~1,400 order items
+- Realistic menu items, quantities, and prices
+
 ## API Endpoints
 
 ### Health

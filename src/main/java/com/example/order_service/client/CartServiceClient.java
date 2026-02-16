@@ -18,11 +18,13 @@ public class CartServiceClient {
         this.restTemplate = restTemplate;
         this.cartServiceBaseUrl = cartServiceBaseUrl;
     }
-    public CartResponseDto getCart(String authorizationHeader) {
+    public CartResponseDto getCart(String authorizationHeader, Long userId, Long tableId) {
         String url = cartServiceBaseUrl;
-        logger.info("Fetching cart from Cart Service: {}", url);
+        logger.info("Fetching cart from Cart Service: {} for userId: {}, tableId: {}", url, userId, tableId);
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", authorizationHeader);
+        headers.set("X-User-Id", String.valueOf(userId));
+        headers.set("X-Table-Id", String.valueOf(tableId));
         HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
         try {
             ResponseEntity<CartResponseDto> response = restTemplate.exchange(url, HttpMethod.GET, requestEntity, CartResponseDto.class);
@@ -43,15 +45,17 @@ public class CartServiceClient {
             throw new BadRequestException("Failed to fetch cart: " + e.getMessage());
         }
     }
-    public void clearCart(String authorizationHeader) {
+    public void clearCart(String authorizationHeader, Long userId, Long tableId) {
         String url = cartServiceBaseUrl;
-        logger.info("Clearing cart via Cart Service: {}", url);
+        logger.info("Clearing cart via Cart Service: {} for userId: {}, tableId: {}", url, userId, tableId);
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", authorizationHeader);
+        headers.set("X-User-Id", String.valueOf(userId));
+        headers.set("X-Table-Id", String.valueOf(tableId));
         HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
         try {
             restTemplate.exchange(url, HttpMethod.DELETE, requestEntity, Void.class);
-            logger.info("Cart cleared successfully");
+            logger.info("Cart cleared successfully for userId: {}", userId);
         } catch (Exception e) {
             logger.error("Failed to clear cart (non-critical): {}", e.getMessage());
         }

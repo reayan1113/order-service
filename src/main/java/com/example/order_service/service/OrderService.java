@@ -47,67 +47,93 @@ public class OrderService {
 
         logger.info("Creating new order for userId: {}, tableId: {}", request.getUserId(), request.getTableId());
 
-        // Step 1: Fetch cart from Cart Service
-        logger.info("Fetching cart for userId: {}", request.getUserId());
-        CartResponseDto cart = cartServiceClient.getCart(authorizationHeader);
+        List<OrderItem> orderItems = new java.util.ArrayList<>();
 
-        // Step 2: Validate cart
-        if (cart == null) {
-            logger.error("Cart Service returned null cart");
-            throw new BadRequestException("Failed to fetch cart. Please try again.");
-        }
+        // Step 1: Check if items are provided in the request body
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            logger.info("Using items provided in the request body (itemCount: {})", request.getItems().size());
 
-        if (cart.getItems() == null || cart.getItems().isEmpty()) {
-            logger.error("Cart is empty for userId: {}", request.getUserId());
-            throw new BadRequestException("Cart is empty. Please add items to cart before placing an order.");
-        }
+            // Validate and map items from request
+            for (OrderItemRequest itemReq : request.getItems()) {
+                if (itemReq.getItemId() == null || itemReq.getQuantity() == null || itemReq.getQuantity() <= 0) {
+                    logger.error("Invalid item in request: {}", itemReq);
+                    throw new BadRequestException(
+                            "Request contains invalid items. Item ID and positive quantity are required.");
+                }
+                if (itemReq.getUnitPrice() == null || itemReq.getUnitPrice().signum() <= 0) {
+                    logger.error("Invalid price for item in request: {}", itemReq);
+                    throw new BadRequestException("Request contains items with invalid prices.");
+                }
 
-        // Validate cart items
-        for (CartItemDto cartItem : cart.getItems()) {
-            if (cartItem.getItemId() == null || cartItem.getQuantity() == null || cartItem.getQuantity() <= 0) {
-                logger.error("Invalid cart item: {}", cartItem);
-                throw new BadRequestException("Cart contains invalid items. Please review your cart.");
+                OrderItem orderItem = new OrderItem();
+                orderItem.setItemId(itemReq.getItemId());
+                orderItem.setItemName(itemReq.getItemName());
+                orderItem.setQuantity(itemReq.getQuantity());
+                orderItem.setUnitPrice(itemReq.getUnitPrice());
+                orderItems.add(orderItem);
             }
-            if (cartItem.getUnitPrice() == null || cartItem.getUnitPrice().signum() <= 0) {
-                logger.error("Invalid price for cart item: {}", cartItem);
-                throw new BadRequestException("Cart contains items with invalid prices.");
+        } else {
+            // Step 2: Fallback - Fetch cart from Cart Service
+            logger.info("Request items empty, fetching cart for userId: {}", request.getUserId());
+            CartResponseDto cart = cartServiceClient.getCart(authorizationHeader, request.getUserId(),
+                    request.getTableId());
+
+            if (cart == null) {
+                logger.error("Cart Service returned null cart");
+                throw new BadRequestException("Failed to fetch cart. Please try again.");
             }
+
+            if (cart.getItems() == null || cart.getItems().isEmpty()) {
+                logger.error("Cart is empty for userId: {}", request.getUserId());
+                throw new BadRequestException("Cart is empty. Please add items to cart before placing an order.");
+            }
+
+            // Validate and map cart items
+            for (CartItemDto cartItem : cart.getItems()) {
+                if (cartItem.getItemId() == null || cartItem.getQuantity() == null || cartItem.getQuantity() <= 0) {
+                    logger.error("Invalid cart item: {}", cartItem);
+                    throw new BadRequestException("Cart contains invalid items. Please review your cart.");
+                }
+                if (cartItem.getUnitPrice() == null || cartItem.getUnitPrice().signum() <= 0) {
+                    logger.error("Invalid price for cart item: {}", cartItem);
+                    throw new BadRequestException("Cart contains items with invalid prices.");
+                }
+
+                OrderItem orderItem = new OrderItem();
+                orderItem.setItemId(cartItem.getItemId());
+                orderItem.setItemName(cartItem.getItemName());
+                orderItem.setQuantity(cartItem.getQuantity());
+                orderItem.setUnitPrice(cartItem.getUnitPrice());
+                orderItems.add(orderItem);
+            }
+
+            logger.info("Cart validation successful - itemCount: {}, totalAmount: {}",
+                    cart.getItems().size(), cart.getTotalAmount());
         }
 
-        logger.info("Cart validation successful - itemCount: {}, totalAmount: {}",
-                cart.getItems().size(), cart.getTotalAmount());
-
-        // Step 3: Create order entity from cart
+        // Step 3: Create and save order entity
         Order order = new Order();
         order.setTableId(request.getTableId());
         order.setUserId(request.getUserId());
         order.setStatus(Order.OrderStatus.CREATED);
 
-        // Add items from cart to order
-        for (CartItemDto cartItem : cart.getItems()) {
-            OrderItem item = new OrderItem();
-            item.setItemId(cartItem.getItemId());
-            item.setItemName(cartItem.getItemName());
-            item.setQuantity(cartItem.getQuantity());
-            item.setUnitPrice(cartItem.getUnitPrice());
-            order.addItem(item);
-        }
+        // Add items to order
+        orderItems.forEach(order::addItem);
 
         // Calculate total amount
         order.calculateTotalAmount();
 
-        // Step 4: Save order (transactional)
+        // Save order
         Order savedOrder = orderRepository.save(order);
 
         logger.info("Order created successfully - orderId: {}, userId: {}, totalAmount: {}",
                 savedOrder.getId(), savedOrder.getUserId(), savedOrder.getTotalAmount());
 
-        // Step 5: Clear cart AFTER successful order creation
+        // Step 4: Clear cart after successful order creation
         try {
             logger.info("Clearing cart for userId: {} after successful order creation", request.getUserId());
-            cartServiceClient.clearCart(authorizationHeader);
+            cartServiceClient.clearCart(authorizationHeader, request.getUserId(), request.getTableId());
         } catch (Exception e) {
-            // Cart clearing failure is logged but doesn't fail the order
             logger.warn("Failed to clear cart after order creation (orderId: {}): {}",
                     savedOrder.getId(), e.getMessage());
         }
@@ -206,4 +232,3 @@ public class OrderService {
         }
     }
 }
-
